@@ -220,7 +220,7 @@ if(!scenario){
    const rewind=new Target('a');rewind.href='http://localhost/#name';rewind.attributes.href='#name';rewind.attributes['data-rewind']='';
    for(let destination=2;destination<=3;destination++){emit(next,'click');await flush();video.present(7.9);endLeg();visible(destination);}
    const before=video.playCalls;emit(doc,'click',{target:rewind,button:0});await flush();
-   assert.equal(video.playCalls,before+1);assert.match(video.src,/rewind\.mp4\?v=final-flight-13$/);
+   assert.equal(video.playCalls,before+1);assert.match(video.src,/rewind\.mp4\?v=return-left-1$/);
    assert.equal(doc.documentElement.classList.contains('reset-flight'),true);assert.equal(main.inert,true,'return flight hides and disables every slide plane');
    for(const seconds of [.4,4,8,12,18,21.9,22.3]){
     video.present(seconds);advance(32);

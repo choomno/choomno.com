@@ -274,7 +274,7 @@ It follows the edge toward an ideal endpoint, turns onto the second edge
 cylinder, and lifts away to the opening view. Its closest approach is about
 0.000005 curvature units above the radius-0.025 cylinder surface, creating
 the intended floor-like perspective. Its 1.6-second endpoint intervals use
-the shared reading-mount clock. Intermediate slide text stays hidden.
+the shared reading-mount clock. The return opening replaces the obsolete rightward sidestep with a leftward departure through 3.1 seconds. Its Bernstein velocity coefficients are nonpositive, and its position, velocity, and acceleration match the existing path at the join. All later camera frames are unchanged. Intermediate slide text stays hidden.
 During the final 1.6-second approach, the opening text slides in using the
 actual return camera relative to its deck-equivalent endpoint. The main
 content stays inert until arrival completes.

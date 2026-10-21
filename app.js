@@ -1,7 +1,7 @@
 import {projectText,initTextSprites,setTextProjection,setReturnProjection} from './text-sprites.js?v=return-arrival-1';
 import {initSectionNavigation} from './section-navigation.js?v=final-flight-11';
 import {readingPhase} from './camera-path.js?v=final-flight-11';
-import {createPrerenderedPlayer} from './prerendered.js?v=final-flight-13';
+import {createPrerenderedPlayer} from './prerendered.js?v=return-left-1';
 import {createTextSuspension} from './text-suspension.js';
 const viewMode=document.querySelector('#view-mode');
 const motionPreferenceKey='choomno-static-view';

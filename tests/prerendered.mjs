@@ -448,7 +448,7 @@ for(const options of [{mp4:true,av1:false},{mp4:false,av1:true}]){
  const configurations=[];
  const cache={configure(urls){configurations.push(urls);},request(url,ready){ready(url);return()=>{};},setHidden(){},destroy(){}};
  const f=fixture({cache});f.navigate(3,0,{reset:true});
- assert.equal(f.video.src,rewindVideo('mp4'));assert.ok(f.video.src.endsWith('?v=final-flight-13'),'new return path cannot reuse the old reverse-route movie cache');assert.equal(f.video.loads.length,1);
+ assert.equal(f.video.src,rewindVideo('mp4'));assert.ok(f.video.src.endsWith('?v=return-left-1'),'new return path cannot reuse the old reverse-route movie cache');assert.equal(f.video.loads.length,1);
  assert.equal(configurations.at(-1).length,7);assert.equal(configurations.at(-1)[3],rewindVideo('mp4'),'reset preloads after the forward route and before reverse legs');
  for(const seconds of [.4,2.7,4,5.5,7.9,12,18,21.9,22.3,22.3+1/60]){
   f.video.present(seconds);assert.equal(f.progress.at(-1),rewindProgress(seconds*1000));

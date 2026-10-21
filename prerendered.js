@@ -6,7 +6,7 @@ export {masterAspect} from './media-settings.js';
 
 export const stationImage=(index,portrait=false)=>`./media/station-${index}${portrait?'-portrait':''}.webp`;
 export const transitionVideo=(leg,direction,format,portrait=false)=>`./media/transition-${leg}-${direction>0?'forward':'reverse'}${portrait?'-portrait':''}.${format}?v=final-flight-13`;
-export const rewindVideo=(format,portrait=false)=>`./media/rewind${portrait?'-portrait':''}.${format}?v=final-flight-13`;
+export const rewindVideo=(format,portrait=false)=>`./media/rewind${portrait?'-portrait':''}.${format}?v=return-left-1`;
 
 // Presented frames anchor the text clock. Display-refresh interpolation is
 // limited to one encoded frame, so a stall cannot let text run away from video.

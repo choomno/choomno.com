@@ -8,7 +8,7 @@
   "fps": 60,
   "fieldScale": 0.82,
   "beamRadius": 0.025,
-  "sceneSha256": "bff316df15d184d3fc1e6fcb409d523a92da264a26c6aa6a13bb606e2ab16bf1",
+  "sceneSha256": "ddd75c59730168096302a6fc8683d0759426b7857c5adbdf0fcb8f82fc035f27",
   "geometryPrecision": "float64",
   "colorPrecision": "float32",
   "tubeDiscriminant": "factored-compensated",
@@ -20,7 +20,7 @@
   "stillHeight": 1920,
   "stillMaxSteps": 160,
   "sourceHashes": {
-    "flight-path.js": "7abfdf5f08290df872e55c8ebba2f44fd4394f02caa0ebf7e8590208e94d1619",
+    "flight-path.js": "db5124f6c7c584c81ddb5b9d94f44802632a4b8fd26527895a6aa8819e594700",
     "camera-routes/camera-baseline.mjs": "68071e0b074281c8fb5095a55721496c69e7feae7c36a0276c95ab5cacee7fd3",
     "camera-routes/flight-legs.mjs": "3e97d3eac129618f27239545cbfbb524c0e450738f9ecf25d2a4c805bf4870aa",
     "camera-routes/inertial-gallery.mjs": "236c0c31138efca2bfa102b905ee4eb2b9169685853b6829499c12caddf4036c",
@@ -38,6 +38,7 @@
     "camera-routes/return-early-speed.mjs": "447ce6233e98f0c74ccbdb4ba0e8630fd6a990f06b54cf641b7da89b3a4efa37",
     "camera-routes/return-even-roll.mjs": "917b9253d4a9ccb70fc1ea1398ae5ed1cb947d9bcfefb674df75dfd427edaa52",
     "camera-routes/return-fast-clock-study.mjs": "c2302d5e20cf47f2c0bbccf05cf4753e9b68825148375797146b5387076e6210",
+    "camera-routes/return-left-departure.mjs": "d22cbf1d4707357dd63a17ba0237bddf8dcc82e55acfdfe2a9d9728cf27081ef",
     "camera-routes/return-monotone-liftoff-study.mjs": "93d1d5322961402eb6ddf83f352ed08f320a78c2c2d3bc2a1da2367f6f423540",
     "camera-routes/return-second-cylinder-before-smooth-exit.mjs": "55320b67a761a4929dea4de0f303bf362dc84ef7689950e78d4c6e174f690157",
     "camera-routes/return-second-cylinder-study.mjs": "ba4a980b624ee47f5f1852e234727fc30187e3a848b567aa373ed4fd9a7ca9ed",
@@ -191,24 +192,29 @@
     "portrait": {
       "mp4": "rewind-portrait.mp4",
       "webm": "rewind-portrait.webm"
+    },
+    "encodingComposition": {
+      "prefixFrames": 480,
+      "unchangedTailFirstFrame": 480,
+      "description": "Re-encoded prefix from corrected lossless frames; original compressed tail copied at keyframe."
     }
   },
   "files": {
     "rewind-portrait.mp4": {
-      "bytes": 4159199,
-      "sha256": "26992cf4f932906c7b08588656022d3ae9f5721f7ab89b015647ae25c04e6372"
+      "bytes": 3902996,
+      "sha256": "d791776758094c3cc41e157f34bbf037d171b56f5cd54821b5b8d59f66f28104"
     },
     "rewind-portrait.webm": {
-      "bytes": 4023155,
-      "sha256": "4158616af2a96415d76cfd61e95ad7de68b3e95e6d941e376230d9e8ac0d7b2e"
+      "bytes": 3978488,
+      "sha256": "7f9879f1db207da32bf6d7336abf57f9846245d32a9e19dc1850cba530d6431c"
     },
     "rewind.mp4": {
-      "bytes": 11158846,
-      "sha256": "d98691e9b0f1dd0f89d47d487ce15654f8ea3645866dc79bce20b4e7adbdee04"
+      "bytes": 10591077,
+      "sha256": "860b552103d76c11840c0162f7647b89387df07a78063d0b88aa6ea686a45d54"
     },
     "rewind.webm": {
-      "bytes": 10826607,
-      "sha256": "80a3f52544aec5d6d8ec85ceb0beeb43d7bbb25f147924163900ad2bc29c8b2d"
+      "bytes": 10587632,
+      "sha256": "6f5a631a5ffa4e8f3ddf84df8fa011bba708f52cb1e073eebbb756da91fb2fe2"
     },
     "station-0-portrait.webp": {
       "bytes": 730866,
