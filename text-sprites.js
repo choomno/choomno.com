@@ -1,7 +1,8 @@
-import {projectReadingPlaneWithDepth, readingPhase} from './projection.js?v=final-flight-11';
+import {projectReadingPlaneWithDepth, readingPhase} from './projection.js?v=return-arrival-1';
 import {routeJoinPhases} from './camera-path.js?v=final-flight-11';
+import {returnTextPose} from './return-text-projection.js';
 const copies = [...document.querySelectorAll('main > section .reading-copy')];
-let lastPhase = 0, sizes = [], enabled = false;
+let lastPhase = 0, sizes = [], enabled = false, returning = false;
 
 function measure() {
  sizes = copies.map(copy => {
@@ -12,7 +13,8 @@ function measure() {
 export function projectText(phase) {
  lastPhase = phase;
  if (!enabled) return;
- const stationIndex = copies.findIndex((_, i) => phase === readingPhase(i));
+ const stationIndex = returning ? (phase===0?0:-1) : copies.findIndex((_, i) => phase === readingPhase(i));
+ const returnCamera = returning ? returnTextPose(phase) : null;
  copies.forEach((copy, i) => {
   const {width, height} = sizes[i];
   if (i === stationIndex && width > 0 && height > 0 && innerWidth > 0 && innerHeight > 0) {
@@ -27,8 +29,8 @@ export function projectText(phase) {
   }
   const separation = Math.abs(phase - readingPhase(i));
   const galleryTravel=phase>routeJoinPhases[2]&&phase<routeJoinPhases[3];
-  const phaseOpacity = stationIndex >= 0 || galleryTravel ? 0 : Math.max(0, 1 - (separation / (Math.PI / 4)) ** 4);
-  const projection = phaseOpacity > 0 && projectReadingPlaneWithDepth(phase, readingPhase(i), width, height, innerWidth, innerHeight);
+  const phaseOpacity = returning ? (i===0&&returnCamera?1:0) : stationIndex >= 0 || galleryTravel ? 0 : Math.max(0, 1 - (separation / (Math.PI / 4)) ** 4);
+  const projection = phaseOpacity > 0 && projectReadingPlaneWithDepth(phase, readingPhase(i), width, height, innerWidth, innerHeight,returning?returnCamera:undefined);
   const opacity = phaseOpacity * (projection?.nearOpacity ?? 0);
   const matrix = opacity > 0 && projection?.matrix;
   copy.style.visibility = matrix ? 'visible' : 'hidden';
@@ -38,6 +40,7 @@ export function projectText(phase) {
   copy.style.willChange = matrix ? 'transform, opacity' : 'auto';
  });
 }
+export function setReturnProjection(value){returning=value;projectText(lastPhase);}
 export function setTextProjection(value) {
  enabled = value;
  document.documentElement.classList.toggle('projected-text', value);

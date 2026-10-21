@@ -35,9 +35,9 @@ export function nearPlaneOpacity(minimumDepth) {
 // A homogeneous plane in the hyperboloid's projective (Klein) model.
 // Its four corners have the same time coordinate and unit Lorentz norm.
 // Interpolating projectively gives a totally geodesic plane in H^3.
-export function projectReadingPlaneWithDepth(phase, stationPhase, width, height, viewportWidth, viewportHeight) {
+export function projectReadingPlaneWithDepth(phase, stationPhase, width, height, viewportWidth, viewportHeight, camera=projectionPose(phase)) {
  if (!(width > 0 && height > 0 && viewportWidth > 0 && viewportHeight > 0)) return null;
- const camera = projectionPose(phase), station = readingPose(stationPhase);
+ const station = readingPose(stationPhase);
  const scale = viewportFieldScale(viewportWidth,viewportHeight);
  const z = textPlaneDepth, half = z * scale * width / viewportHeight, vertical = half * height / width;
  const time = Math.sqrt(1 + half * half + vertical * vertical + z * z);

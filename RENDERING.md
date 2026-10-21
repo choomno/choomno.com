@@ -274,9 +274,10 @@ It follows the edge toward an ideal endpoint, turns onto the second edge
 cylinder, and lifts away to the opening view. Its closest approach is about
 0.000005 curvature units above the radius-0.025 cylinder surface, creating
 the intended floor-like perspective. Its 1.6-second endpoint intervals use
-the shared reading-mount clock. All slide text is hidden and the main
-content is inert during this closing flight; the first reading block
-becomes visible and interactive only after arrival.
+the shared reading-mount clock. Intermediate slide text stays hidden.
+During the final 1.6-second approach, the opening text slides in using the
+actual return camera relative to its deck-equivalent endpoint. The main
+content stays inert until arrival completes.
 
 `flight-path.js` exposes these four timed camera paths. The renderer uses
 them directly, including deck-equivalent endpoint lifts. `camera-path.js`
@@ -297,8 +298,8 @@ directly to the player and text projection. Native scroll positions are
 rounded by the browser: a sidestep occupies only a few CSS scroll pixels,
 so those positions cannot drive the near text smoothly. In projected mode,
 the controller retains unrounded progress. During the closing flight this
-coordinate only tracks navigation; the dedicated movie follows `loopPose`
-and the slide text remains hidden. In ordinary document flow the background
+coordinate tracks the dedicated movie's `loopPose` clock; only the opening
+text is projected during its final reading approach. In ordinary document flow the background
 selects the nearest station poster, keeping scrolling readable without
 video seeking.
 

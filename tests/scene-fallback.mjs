@@ -226,6 +226,16 @@ if(!scenario){
     video.present(seconds);advance(32);
     assert.equal(doc.documentElement.classList.contains('reset-flight'),true,'intermediate logical section coordinates never reveal earlier slide text');
     assert.equal(main.inert,true);assert.equal(next.disabled,true,'return flight holds the navigation lock');
+    copies.slice(1).forEach(copy=>assert.equal(copy.style.visibility,'hidden','intermediate text never appears during the return'));
+    if(seconds<=18)assert.equal(copies[0].style.visibility,'hidden','opening text waits for its actual final approach');
+    if(seconds===21.9){
+     advance(200); // Let the suspension follow this deliberately sparse frame sample.
+     assert.equal(copies[0].style.visibility,'visible','the name slides in before the movie ends');
+     assert.match(copies[0].style.transform,/^matrix3d\(/,'arrival uses the camera projection instead of appearing centered');
+     advance(500);const stalled=copies[0].style.transform;
+     assert.notEqual(copies[0].style.transform,'','a stalled arrival retains its projected text');
+     advance(500);assert.equal(copies[0].style.transform,stalled,'a stalled movie cannot advance the name toward its destination');
+    }
    }
    endLeg();advance(16);visible(0);assert.equal(still.src,'./media/station-0.webp');assert.equal(doc.activeElement,ids.name);
    assert.equal(doc.documentElement.classList.contains('reset-flight'),false);assert.equal(main.inert,false,'arrival reveals only the exact opening text');

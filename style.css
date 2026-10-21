@@ -58,5 +58,5 @@ button:focus-visible,a:focus-visible,summary:focus-visible,select:focus-visible{
  footer{flex-wrap:wrap;padding-bottom:72px}
 }
 
-/* Keep the dedicated return flight free of every slide, including intermediate anchors. */
-.reset-flight main .reading-copy{visibility:hidden!important;pointer-events:none!important}
+/* The opening text can slide in at the end of the return; other slides stay hidden. */
+.reset-flight main > section:not(.intro) .reading-copy{visibility:hidden!important;pointer-events:none!important}

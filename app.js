@@ -1,4 +1,4 @@
-import {projectText,initTextSprites,setTextProjection} from './text-sprites.js?v=final-flight-11';
+import {projectText,initTextSprites,setTextProjection,setReturnProjection} from './text-sprites.js?v=return-arrival-1';
 import {initSectionNavigation} from './section-navigation.js?v=final-flight-11';
 import {readingPhase} from './camera-path.js?v=final-flight-11';
 import {createPrerenderedPlayer} from './prerendered.js?v=final-flight-13';
@@ -13,12 +13,13 @@ let running=!reduced.matches&&!prefersStatic,phase=0,navigation=null;
 const textMotion=createTextSuspension(projectText);
 function updateText(immediate=false){textMotion.set(running?phase:readingPhase(navigation?.active??0),{immediate:immediate||!running||!document.documentElement.classList.contains('projected-text')});}
 function reportProgress(value){
- phase=readingPhase(value);updateText(!player.playing&&Number.isInteger(value));
+ phase=readingPhase(value);updateText((document.documentElement.classList.contains('reset-flight')&&value===3)||(!player.playing&&Number.isInteger(value)));
  if(!player.playing&&Number.isInteger(value))player.showStation(value,{preload:running});
 }
 function setResetFlight(active){
  document.documentElement.classList.toggle('reset-flight',active);
  document.querySelector('main').inert=active;
+ setReturnProjection(active);
 }
 function state(){
  viewMode.textContent=running?'Static view':'Animated view';
@@ -47,7 +48,7 @@ async function main(){
   animateTransition:options=>{
    if(!running){options.onProgress(options.to);options.onComplete();return()=>{};}
    if(!options.reset)return player.navigate(options);
-   // The closing flight has no intermediate text planes along its route.
+   // Only the opening text plane appears during the closing flight's arrival.
    setResetFlight(true);
    try{
     const cancel=player.navigate({...options,onComplete(){
