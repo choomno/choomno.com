@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
-import {createPrerenderedPlayer,stationImage,transitionVideo} from '../prerendered.js';
-import {transitionDuration,transitionProgress} from '../transition-timing.js';
+import {createPrerenderedPlayer,stationImage,transitionVideo,rewindVideo} from '../prerendered.js';
+import {transitionDuration,transitionDurationForLeg,transitionProgress} from '../transition-timing.js';
 import {portraitAspect,videoFramesPerSecond} from '../media-settings.js';
 import {createVideoCache} from '../video-cache.js';
+import {rewindProgress,rewindDuration} from '../rewind-timing.js';
 
 let now=0,nextId=0,rafs=new Map(),timers=new Map();
 Object.defineProperty(globalThis,'navigator',{value:{connection:{saveData:false}},configurable:true});
@@ -46,8 +47,30 @@ function fixture(options){
  if(options?.decodePoster)still.decode=()=>new Promise((resolve,reject)=>decodes.push({resolve,reject,src:still.src,portrait:portraitSource.srcset}));
  const cache=options?.cache??{configure(){},request(url,ready){ready(url);return()=>{};},setHidden(){},destroy(){}};
  const player=createPrerenderedPlayer({still,video,portraitSource,cache});let completions=0;
- const navigate=(from,to)=>player.navigate({from,to,onProgress:value=>progress.push(value),onComplete:()=>++completions});
+ const navigate=(from,to,options={})=>player.navigate({from,to,...options,onProgress:value=>progress.push(value),onComplete:()=>++completions});
  return {still,portraitSource,stillWrites,portraitWrites,decodes,video,player,progress,navigate,get completions(){return completions;}};
+}
+
+// Both responsive families contain all six directions and the independent return.
+{
+ const media=new Set();
+ for(const portrait of [false,true])for(const format of ['mp4','webm']){
+  for(let leg=0;leg<3;leg++)for(const direction of [-1,1])media.add(transitionVideo(leg,direction,format,portrait));
+  media.add(rewindVideo(format,portrait));
+ }
+ assert.equal(media.size,28);
+}
+// Unequal leg durations must remain synchronized in either direction, including
+// the extra encoded endpoint frame after the logical timeline has reached rest.
+for(let leg=0;leg<3;leg++)for(const direction of [-1,1]){
+ const from=direction>0?leg:leg+1,to=from+direction,duration=transitionDurationForLeg(leg);
+ const f=fixture();f.navigate(from,to);
+ for(const ms of [0,800,1600,duration/2,duration-1600,duration-800,duration,duration+1000/60]){
+  f.video.present(ms/1000);
+  assert.equal(f.progress.at(-1),from+direction*transitionProgress(ms,leg));
+ }
+ assert.equal(f.progress.at(-1),to);assert.equal(f.completions,0,'only the ended event hands off the poster');
+ f.video.onended();assert.equal(f.completions,1);assert.equal(f.still.src,stationImage(to));f.player.destroy();
 }
 
 // Frame presentation timestamps, not wall time or the separate playback clock,
@@ -68,6 +91,7 @@ function fixture(options){
  const atHandoff=f.progress.length;oldEnded();assert.equal(f.progress.length,atHandoff,'an old ended event cannot skip the next clip');oldFrame(now,{mediaTime:6});assert.equal(f.progress.length,atHandoff,'an old leg callback cannot update the next leg');
  await flush();assert.equal(f.player.playing,true,'load-induced rejection from the previous leg cannot abort the next leg');
  f.video.present(.4);assert.equal(f.progress.at(-1),1+transitionProgress(400,1));
+ f.video.present(10.8);assert.equal(f.progress.at(-1),1+transitionProgress(10800,1),'the longer gallery must retain its final text arrival after eight seconds');
  f.video.onended();assert.equal(f.progress.at(-1),2);assert.equal(f.completions,0);
  f.video.present((transitionDuration-16)/1000);f.video.onended();
  assert.equal(f.progress.at(-1),3);assert.equal(f.completions,1);assert.equal(f.player.playing,false);
@@ -358,6 +382,13 @@ function fixture(options){
   const reduced=fixture({cache:createVideoCache()}),reducedStart=downloads.length;
   reduced.player.showStation(0);assert.equal(downloads.length,reducedStart);reduced.player.destroy();delete globalThis.matchMedia;
 
+  const staticPlayer=fixture({cache:createVideoCache()}),staticStart=downloads.length;
+  staticPlayer.player.showStation(0,{preload:false});assert.equal(downloads.length,staticStart,'explicit static mode loads its poster without videos');
+  staticPlayer.player.showStation(0);assert.equal(downloads.length,staticStart+1);
+  staticPlayer.player.freeze();assert.equal(downloads.at(-1).signal.aborted,true,'switching to static mode cancels a speculative transfer');
+  staticPlayer.player.showStation(1,{preload:false});await settle();assert.equal(downloads.length,staticStart+1,'selecting static sections cannot restart the preload queue');
+  staticPlayer.player.showStation(1);assert.equal(downloads.length,staticStart+2,'animated mode can resume the paused preload queue');staticPlayer.player.destroy();await settle();
+
   // A failed background fetch can be retried on demand without poisoning the
   // cache. A canceled subscriber must not receive completion or failure.
   const retryCache=createVideoCache();retryCache.configure(urls,{preload:false});
@@ -404,4 +435,41 @@ for(const options of [{mp4:true,av1:false},{mp4:false,av1:true}]){
  assert.equal(f.completions,1);assert.equal(f.video.loads.length,0);assert.equal(f.still.src,stationImage(1));
  assert.ok(configurations.every(({preload})=>preload===false),'no eager downloads when neither codec is supported');f.player.destroy();
 }
-console.log('Prerendered player: display-refresh text, bounded presented-frame interpolation, complete-clip buffering, serial six-clip preload, priority/deduplication, responsive cache eviction, data saver/reduced motion, supported-codec retry, cancellation, decoded poster handoffs and playback races passed.');
+
+// A full reset uses one closing-loop movie following its own physical path.
+// The route coordinate below is only for navigation/scroll while text is hidden.
+{
+ assert.equal(rewindProgress(-1),3);assert.equal(rewindProgress(0),3);assert.equal(rewindProgress(rewindDuration),0);assert.equal(rewindProgress(rewindDuration+1),0);
+ assert.equal(rewindProgress(rewindDuration/2),1.5);
+ assert.ok(Math.abs(rewindProgress(rewindDuration/3)-2)<1e-12);assert.ok(Math.abs(rewindProgress(2*rewindDuration/3)-1)<1e-12);
+ let previous=3;for(let elapsed=1;elapsed<=rewindDuration;elapsed++){
+  const coordinate=rewindProgress(elapsed);assert.ok(coordinate<=previous&&coordinate>=0);previous=coordinate;
+ }
+ const configurations=[];
+ const cache={configure(urls){configurations.push(urls);},request(url,ready){ready(url);return()=>{};},setHidden(){},destroy(){}};
+ const f=fixture({cache});f.navigate(3,0,{reset:true});
+ assert.equal(f.video.src,rewindVideo('mp4'));assert.ok(f.video.src.endsWith('?v=final-flight-13'),'new return path cannot reuse the old reverse-route movie cache');assert.equal(f.video.loads.length,1);
+ assert.equal(configurations.at(-1).length,7);assert.equal(configurations.at(-1)[3],rewindVideo('mp4'),'reset preloads after the forward route and before reverse legs');
+ for(const seconds of [.4,2.7,4,5.5,7.9,12,18,21.9,22.3,22.3+1/60]){
+  f.video.present(seconds);assert.equal(f.progress.at(-1),rewindProgress(seconds*1000));
+ }
+ const oldFrame=[...f.video.frames.values()][0],oldEnded=f.video.onended;f.video.onended();
+ assert.equal(f.progress.at(-1),0);assert.equal(f.completions,1);assert.equal(f.video.loads.length,1);
+ assert.deepEqual(f.stillWrites,[stationImage(3),stationImage(0)],'reset has no intermediate poster/video handoffs');
+ const count=f.progress.length;oldEnded();oldFrame(now,{mediaTime:4});assert.equal(f.progress.length,count);f.player.destroy();await flush();
+}
+{
+ globalThis.innerWidth=390;globalThis.innerHeight=844;
+ const f=fixture({mp4:true,av1:true,decodePoster:true});f.navigate(3,0,{reset:true});f.decodes.at(-1).resolve();await flush();
+ assert.equal(f.video.src,rewindVideo('webm',true));f.video.present(4);
+ f.player.setHidden(true);await flush();advance(20000);assert.equal(f.completions,0);f.player.setHidden(false);
+ f.video.present(5);assert.equal(f.progress.at(-1),rewindProgress(5000));
+ f.video.onerror();await flush();assert.equal(f.video.src,rewindVideo('mp4',true),'reset retries the same responsive movie in the supported fallback codec');
+ assert.equal(f.progress.at(-1),3,'retry returns text to the reset movie starting point');
+ f.video.present(7.9);f.video.onended();assert.equal(f.video.hidden,false);assert.equal(f.completions,0);
+ f.decodes.at(-1).resolve();await flush();assert.equal(f.video.hidden,true);assert.equal(f.completions,1);assert.equal(f.progress.at(-1),0);f.player.destroy();
+ const failed=fixture();failed.navigate(3,0,{reset:true});failed.video.onerror();assert.equal(failed.still.src,stationImage(0));assert.equal(failed.completions,1);failed.player.destroy();
+ const ordinary=fixture();ordinary.navigate(2,0,{reset:true});assert.equal(ordinary.video.src,transitionVideo(1,-1,'mp4',true),'a reset request outside the closing station keeps its actual ordinary route');ordinary.player.destroy();
+ delete globalThis.innerWidth;delete globalThis.innerHeight;await flush();
+}
+console.log('Prerendered player: display-refresh text, bounded presented-frame interpolation, complete-clip buffering, serial seven-clip preload, priority/deduplication, responsive cache eviction, data saver/reduced motion, supported-codec retry, one-movie compressed rewind, cancellation, decoded poster handoffs and playback races passed.');

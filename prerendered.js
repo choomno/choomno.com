@@ -1,10 +1,12 @@
-import {transitionProgress,transitionDuration} from './transition-timing.js';
+import {transitionProgress,transitionDurationForLeg} from './transition-timing.js?v=final-flight-11';
 import {portraitAspect,videoFramesPerSecond} from './media-settings.js';
 import {createVideoCache} from './video-cache.js';
+import {rewindProgress} from './rewind-timing.js?v=final-flight-11';
 export {masterAspect} from './media-settings.js';
 
 export const stationImage=(index,portrait=false)=>`./media/station-${index}${portrait?'-portrait':''}.webp`;
-export const transitionVideo=(leg,direction,format,portrait=false)=>`./media/transition-${leg}-${direction>0?'forward':'reverse'}${portrait?'-portrait':''}.${format}?v=av1-4m-1`;
+export const transitionVideo=(leg,direction,format,portrait=false)=>`./media/transition-${leg}-${direction>0?'forward':'reverse'}${portrait?'-portrait':''}.${format}?v=final-flight-13`;
+export const rewindVideo=(format,portrait=false)=>`./media/rewind${portrait?'-portrait':''}.${format}?v=final-flight-13`;
 
 // Presented frames anchor the text clock. Display-refresh interpolation is
 // limited to one encoded frame, so a stall cannot let text run away from video.
@@ -19,6 +21,7 @@ export function createPrerenderedPlayer({still,video,portraitSource,cache=create
  const allowPreload=()=>!navigator.connection?.saveData&&!(typeof matchMedia==='function'&&matchMedia('(prefers-reduced-motion: reduce)').matches);
  function configureCache(portrait=portraitViewport(),preload=allowPreload()){
   const urls=[];for(let leg=0;leg<3;leg++)urls.push(transitionVideo(leg,1,preferred,portrait));
+  urls.push(rewindVideo(preferred,portrait));
   for(let leg=2;leg>=0;leg--)urls.push(transitionVideo(leg,-1,preferred,portrait));
   cache.configure(urls,{preload:preload&&supported[preferred]});
  }
@@ -44,11 +47,12 @@ export function createPrerenderedPlayer({still,video,portraitSource,cache=create
   posterTimer=setTimeout(()=>finish(false),12000);
   try{still.decode().then(()=>finish(true),()=>finish(false));}catch{finish(false);}
  }
- function showStation(index){cancelCurrent?.();showStill(index,decoded=>{if(decoded)configureCache();});}
- function navigate({from,to,onProgress,onComplete}){
+ function showStation(index,{preload=true}={}){cancelCurrent?.();showStill(index,decoded=>{if(decoded)configureCache(portraitViewport(),preload&&allowPreload());});}
+ function navigate({from,to,reset=false,onProgress,onComplete}){
   cancelCurrent?.();
   let cancelled=false,playbackReady=false,frame=0,raf=0,watchdog=0,current=from,attempt=0,playId=0,legId=0,lastTime=-1,lastFrameTime=-1,anchor=null,cancelDownload=null;
   const direction=Math.sign(to-from);
+  const rewinding=reset&&from===3&&to===0;
   const portrait=portraitViewport();
   playing=true;
   function clearFrames(){
@@ -75,8 +79,9 @@ export function createPrerenderedPlayer({still,video,portraitSource,cache=create
   function report(seconds){
    if(cancelled||seconds<=lastTime)return;
    lastTime=seconds;
+   if(rewinding){onProgress(rewindProgress(seconds*1000));return;}
    const leg=Math.min(current,current+direction);
-   const fraction=transitionProgress(Math.min(transitionDuration,Math.max(0,seconds*1000)),leg);
+   const fraction=transitionProgress(Math.min(transitionDurationForLeg(leg),Math.max(0,seconds*1000)),leg);
    onProgress(current+direction*fraction);
   }
   function followDisplay(){
@@ -141,7 +146,7 @@ export function createPrerenderedPlayer({still,video,portraitSource,cache=create
     video.onerror=()=>retry(id);
     video.onended=()=>{
      if(cancelled||id!==legId)return;
-     playbackReady=false;++legId;clearFrames();pause();current+=direction;
+     playbackReady=false;++legId;clearFrames();pause();current=rewinding?to:current+direction;
      showStill(current,()=>{
       if(cancelled)return;
       onProgress(current);
@@ -150,10 +155,10 @@ export function createPrerenderedPlayer({still,video,portraitSource,cache=create
      });
     };
     if(typeof Image==='function'){
-     const nextPoster=new Image();nextPoster.fetchPriority='low';nextPoster.src=stationImage(current+direction,portrait);
+     const nextPoster=new Image();nextPoster.fetchPriority='low';nextPoster.src=stationImage(rewinding?to:current+direction,portrait);
     }
     configureCache(portrait);
-    cancelDownload=cache.request(transitionVideo(leg,direction,format,portrait),url=>{
+    cancelDownload=cache.request(rewinding?rewindVideo(format,portrait):transitionVideo(leg,direction,format,portrait),url=>{
      if(cancelled||id!==legId)return;
      video.src=url;video.load();playbackReady=true;followFrames();play();
     },()=>{if(!cancelled&&id===legId)retry(id);});

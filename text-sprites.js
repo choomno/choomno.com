@@ -1,4 +1,5 @@
-import {projectReadingPlaneWithDepth, readingPhase} from './projection.js?v=prerendered-60-1';
+import {projectReadingPlaneWithDepth, readingPhase} from './projection.js?v=final-flight-11';
+import {routeJoinPhases} from './camera-path.js?v=final-flight-11';
 const copies = [...document.querySelectorAll('main > section .reading-copy')];
 let lastPhase = 0, sizes = [], enabled = false;
 
@@ -25,7 +26,8 @@ export function projectText(phase) {
    return;
   }
   const separation = Math.abs(phase - readingPhase(i));
-  const phaseOpacity = stationIndex >= 0 ? 0 : Math.max(0, 1 - (separation / (Math.PI / 4)) ** 4);
+  const galleryTravel=phase>routeJoinPhases[2]&&phase<routeJoinPhases[3];
+  const phaseOpacity = stationIndex >= 0 || galleryTravel ? 0 : Math.max(0, 1 - (separation / (Math.PI / 4)) ** 4);
   const projection = phaseOpacity > 0 && projectReadingPlaneWithDepth(phase, readingPhase(i), width, height, innerWidth, innerHeight);
   const opacity = phaseOpacity * (projection?.nearOpacity ?? 0);
   const matrix = opacity > 0 && projection?.matrix;

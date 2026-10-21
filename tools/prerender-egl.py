@@ -19,7 +19,8 @@ for name,result,args in [
  ('eglGetDisplay',P,[P]),('eglInitialize',U,[P,C.POINTER(I),C.POINTER(I)]),
  ('eglBindAPI',U,[U]),('eglChooseConfig',U,[P,C.POINTER(I),C.POINTER(P),I,C.POINTER(I)]),
  ('eglCreatePbufferSurface',P,[P,P,C.POINTER(I)]),('eglCreateContext',P,[P,P,P,C.POINTER(I)]),
- ('eglMakeCurrent',U,[P,P,P,P]),('eglGetError',U,[])]:function(E,name,result,args)
+ ('eglMakeCurrent',U,[P,P,P,P]),('eglDestroyContext',U,[P,P]),
+ ('eglDestroySurface',U,[P,P]),('eglTerminate',U,[P]),('eglGetError',U,[])]:function(E,name,result,args)
 for name,result,args in [
  ('glGenVertexArrays',None,[I,C.POINTER(U)]),('glBindVertexArray',None,[U]),
  ('glGetUniformBlockIndex',U,[U,C.c_char_p]),('glUniformBlockBinding',None,[U,U,U]),
@@ -104,3 +105,14 @@ class Renderer:
   err=G.glGetError()
   if err:raise RuntimeError(hex(err))
   return bytes(self.pixels)
+
+ def close(self):
+  """Release framebuffer/context before another large render or encoding."""
+  if self.context:
+   E.eglMakeCurrent(self.display,None,None,None)
+   E.eglDestroyContext(self.display,self.context)
+   E.eglDestroySurface(self.display,self.surface)
+   E.eglTerminate(self.display)
+   self.context=None
+   self.surface=None
+   self.pixels=None

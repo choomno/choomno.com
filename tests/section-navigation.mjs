@@ -76,16 +76,16 @@ const button=new Target('button');
 assert.equal(emit(win,'keydown',{key:' ',target:button}).defaultPrevented,false,'explicit controls retain Space activation');
 assert.equal(emit(win,'keydown',{key:'Tab'}).defaultPrevented,false,'Tab retains accessible focus navigation');
 for(const [key,index] of [['ArrowDown',2],['ArrowUp',1],['ArrowRight',2],['ArrowLeft',1]]){
- emit(win,'keydown',{key,target:link});assert.equal(nav.active,index,`${key} selects the adjacent section`);advance(transitionDuration);
+ emit(win,'keydown',{key,target:link});assert.equal(nav.active,index,`${key} selects the adjacent section`);advance(12000);
 }
 emit(doc,'click',{button:0});assert.equal(nav.active,1,'a blank-page mouse click does not advance');
 emit(doc,'click',{button:0,pointerType:'pen'});assert.equal(nav.active,1,'non-touch pointer clicks do not advance');
-emit(win,'wheel',{deltaY:100,deltaX:0});assert.equal(nav.active,2,'wheel navigation remains available');advance(transitionDuration);
+emit(win,'wheel',{deltaY:100,deltaX:0});assert.equal(nav.active,2,'wheel navigation remains available');advance(12000);
 const input=new Target('input');assert.equal(emit(win,'keydown',{key:'Home',target:input}).defaultPrevented,false);assert.equal(nav.active,2);
 assert.equal(emit(win,'wheel',{deltaY:100,deltaX:0,ctrlKey:true}).defaultPrevented,false,'pinch/zoom is not intercepted');
 assert.equal(emit(win,'wheel',{deltaY:40,deltaX:100}).defaultPrevented,true,'diagonal wheel motion cannot scroll the document out of sync');
 assert.equal(nav.active,2,'predominantly horizontal wheel motion does not select a section');
-geometry[1][0]+=.25;nav.goTo(1,{immediate:true});globalThis.scrollY=849;nav.goTo(2);advance(transitionDuration);
+geometry[1][0]+=.25;nav.goTo(1,{immediate:true});globalThis.scrollY=849;nav.goTo(2);advance(12000);
 assert.equal(scrollY,1650.125,'pixel rounding at a settled anchor must not create an extra near-stationary leg');
 geometry[1][0]-=.25;
 // Multi-section requests visit every anchor, easing to rest before changing route legs.
@@ -99,18 +99,18 @@ advance(5);const after10=scrollY;
 assert.ok(Math.abs(firstStop-before5)/5<.001&&Math.abs(after5-firstStop)/5<.001,'speed vanishes on both sides of an intermediate anchor');
 assert.ok(Math.abs(firstStop-2*before5+before10)/25<.0002&&Math.abs(after10-2*after5+firstStop)/25<.0002,'acceleration vanishes before and after changing route legs');
 assert.ok(before10<before5&&before5<firstStop&&firstStop<after5&&after5<after10,'there is no overshoot or reversal at the stop');
-advance(transitionDuration-10);assert.equal(scrollY,1650.125,'A multi-section jump reaches the next anchor after another full leg');
+advance(12000-10);assert.equal(scrollY,1650.125,'A multi-section jump reaches the next anchor after another full leg');
 advance(transitionDuration);assert.equal(scrollY,2450,'A multi-section jump completes only after all three legs');
 nav.goTo(0);
-for(const y of [1650.125,849.25,0]){advance(transitionDuration);assert.equal(scrollY,y,'A reverse multi-section jump traverses the same anchors in reverse');}
+for(const [y,ms] of [[1650.125,8000],[849.25,12000],[0,8000]]){advance(ms);assert.equal(scrollY,y,'A reverse multi-section jump traverses the same anchors in reverse');}
 const distantLink=new Target('a');distantLink.href='http://localhost/?preview=1#elsewhere';distantLink.attributes.href='#elsewhere';
 assert.equal(emit(doc,'click',{target:distantLink,button:0}).defaultPrevented,true);
-for(const y of [849.25,1650.125,2450]){advance(transitionDuration);assert.equal(scrollY,y,'an internal link traverses consecutive legs');}
+for(const [y,ms] of [[849.25,8000],[1650.125,12000],[2450,8000]]){advance(ms);assert.equal(scrollY,y,'an internal link traverses consecutive legs');}
 const homeLink=new Target('a');homeLink.href='http://localhost/?preview=1#name';homeLink.attributes.href='#name';
 emit(doc,'pointerdown',{target:homeLink});emit(doc,'focusin',{target:new Target('header')});
 assert.equal(nav.active,3,'pointer focus must not bypass a link transition');
 emit(doc,'click',{target:homeLink,button:0});
-for(const y of [1650.125,849.25,0]){advance(transitionDuration);assert.equal(scrollY,y,'the header home link traverses every reverse leg');}
+for(const [y,ms] of [[1650.125,8000],[849.25,12000],[0,8000]]){advance(ms);assert.equal(scrollY,y,'the header home link traverses every reverse leg');}
 advance(16);
 assert.equal(doc.activeElement,ids.name,'rewinding to the first slide transfers keyboard focus to the name');
 assert.equal(ids.name.focusOptions.preventScroll,true,'focus does not disturb the calibrated camera stop');
@@ -119,8 +119,9 @@ const rewind=new Target('a');rewind.href=homeLink.href;rewind.attributes.href='#
 doc.activeElement=rewind;
 emit(doc,'click',{target:rewind,button:0});
 assert.equal(nav.active,0,'Rewind selects the opening slide');
-assert.equal(scrollY,0,'Rewind resets immediately without traversing the intervening slides');
-assert.equal(nav.progress,0,'Rewind immediately restores the calibrated camera pose');
+assert.equal(scrollY,2450,'Rewind starts at the current camera position');
+advance(28000);assert.equal(scrollY,0,'navigation without a media driver traverses the route');
+assert.equal(nav.progress,0,'Rewind restores the calibrated camera pose');
 advance(16);
 assert.equal(doc.activeElement,ids.name,'Rewind restores keyboard focus to the name');
 nav.goTo(2,{immediate:true});
@@ -211,10 +212,15 @@ assert.equal(scrollY,2450);
 media.matches=false;emit(media,'change');
 const beforeRewind=requests.length;
 emit(doc,'click',{target:rewind,button:0});
-assert.equal(requests.length,beforeRewind,'Rewind bypasses media playback');
+assert.equal(requests.length,beforeRewind+1,'Rewind starts one media request');
+assert.equal(requests.at(-1).reset,true,'final-slide Rewind requests the dedicated reset clip');
+assert.deepEqual([requests.at(-1).from,requests.at(-1).to],[3,0]);
+requests.at(-1).onComplete();
 assert.equal(scrollY,0);assert.equal(mediaNav.progress,0);advance(16);
-assert.equal(doc.activeElement,ids.name,'immediate rewind retains focus transfer with a media driver installed');
+assert.equal(doc.activeElement,ids.name,'completed rewind retains focus transfer with a media driver installed');
 
+mediaNav.goTo(2,{immediate:true});
+emit(doc,'click',{target:rewind,button:0});assert.equal(requests.at(-1).reset,false,'Rewind outside the last slide uses ordinary playback');requests.at(-1).onComplete();
 mediaNav.goTo(3);const interrupted=requests.at(-1);interrupted.onProgress(.1);
 const beforeDestroy=reported.length,destroyedPosition=scrollY;
 mediaNav.destroy();assert.equal(interrupted.cancellations,1,'destroy cancels external playback');

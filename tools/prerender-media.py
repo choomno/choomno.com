@@ -14,9 +14,10 @@ not be installed in the website or the host's global Python environment.
 Rendering is resumable when scene and quality settings match. --force invalidates
 old cached frames before starting a new generation. --encode-only reuses a
 completed render without creating a GL context. Default video output is 1920x960,
-rendered at 2880x1440 and Lanczos-downsampled. Each eight-second route contains
-481 frames at 60fps: the exact destination is at PTS 8.0s and the container lasts
-8.0167s. Reverse clips reuse the same frames backwards. Portrait files are exact
+rendered at 2880x1440 and Lanczos-downsampled. Each route contains duration * 60 + 1 frames: the exact destination is at
+PTS duration and the container lasts one frame longer. Reverse clips reuse the same frames backwards. A closing-loop rewind
+renders its own exported camera poses, preserving the main routes and posters.
+Portrait files are exact
 center crops with the same vertical field of view.
 """
 import argparse
@@ -52,15 +53,18 @@ def crop_portrait(image):
 
 
 def encode(source, output, fps, codec, frame_count, *, ffmpeg='ffmpeg',
-           threads=4, portrait=False, width=1920, height=960):
+           threads=2, portrait=False, width=1920, height=960):
     # Two-pass allocation preserves the intricate endpoint views at modest size.
     rate = 1_500_000 if portrait else 4_000_000
     filters = ['format=' + ('yuv420p' if codec == 'mp4' else 'yuv420p10le')]
     if portrait:
         cropped_width = portrait_width(height)
         filters.insert(0, f'crop={cropped_width}:{height}:{(width-cropped_width)//2}:0')
-    record = dict(version=3 if codec == 'mp4' else 2, codec=codec, rate=rate, fps=fps, frames=frame_count,
-                  portrait=portrait, width=width, height=height)
+    record = dict(version=3, codec=codec, rate=rate, fps=fps, frames=frame_count,
+                  portrait=portrait, width=width, height=height,
+                  keyframeInterval=min(frame_count-1,round(8*fps)),
+                  cpuUsed=2 if codec=='webm' else None,
+                  firstPassCpuUsed=6 if codec=='webm' else None)
     # Store provenance beside raw frames, outside the served website. Completed
     # files are reused only when settings AND their content digest still match.
     cache = source.parent.parent / 'encoding-cache'
@@ -77,8 +81,9 @@ def encode(source, output, fps, codec, frame_count, *, ffmpeg='ffmpeg',
     common = [ffmpeg, '-hide_banner', '-loglevel', 'warning', '-y',
               '-framerate', str(fps), '-i', str(source / '%04d.png'), '-an',
               '-frames:v', str(frame_count), '-vf', ','.join(filters),
-              '-threads', str(threads), '-b:v', str(rate), '-g', str(frame_count-1),
-              '-passlogfile', str(cache / output.name)]
+              '-threads', str(threads), '-b:v', str(rate), '-g', str(min(frame_count-1,round(8*fps))),
+              '-passlogfile', str(cache / output.name),
+              '-progress', str(cache / (output.name + '.progress'))]
     temporary = output.with_name('.' + output.stem + '.partial' + output.suffix)
     with (cache / (output.name + '.log')).open('w') as log:
         for pass_number in [1, 2]:
@@ -90,7 +95,7 @@ def encode(source, output, fps, codec, frame_count, *, ffmpeg='ffmpeg',
                            '-bufsize', str(rate*2), '-sc_threshold', '0',
                            '-x264-params', 'zones=' + zones]
             else:
-                options = ['-c:v', 'libaom-av1', '-cpu-used', '6' if pass_number == 1 else '4',
+                options = ['-c:v', 'libaom-av1', '-cpu-used', '6' if pass_number == 1 else '2',
                            '-row-mt', '1', '-tiles', '2x1', '-lag-in-frames', '35']
             destination = ['-f', 'null', '/dev/null'] if pass_number == 1 else (
                 ['-movflags', '+faststart', str(temporary)] if codec == 'mp4' else [str(temporary)])
@@ -104,7 +109,7 @@ def encode(source, output, fps, codec, frame_count, *, ffmpeg='ffmpeg',
 
 
 def encode_leg(work, output, scene, leg, *, ffmpeg='ffmpeg', threads=2,
-               width=1920, height=960):
+               width=1920, height=960, jobs=1):
     frames = scene['legs'][leg]
     directory = work / 'frames' / f'leg-{leg}'
     for i in range(len(frames)):
@@ -117,18 +122,66 @@ def encode_leg(work, output, scene, leg, *, ffmpeg='ffmpeg', threads=2,
         original = directory / f'{len(frames)-1-i:04d}.png'
         target.unlink(missing_ok=True)
         os.link(original, target)
-    jobs = []
+    encoding_jobs = []
     for direction, source in [('forward', directory), ('reverse', reverse)]:
         for portrait in [False, True]:
             suffix = '-portrait' if portrait else ''
             for codec in ['mp4', 'webm']:
                 path = output / f'transition-{leg}-{direction}{suffix}.{codec}'
                 print(f'Encoding {path.name}', flush=True)
-                jobs.append((source, path, codec, portrait))
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+                encoding_jobs.append((source, path, codec, portrait))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
         futures = [pool.submit(encode, source, path, scene['fps'], codec, len(frames),
                    ffmpeg=ffmpeg, threads=threads, portrait=portrait, width=width, height=height)
-                   for source, path, codec, portrait in jobs]
+                   for source, path, codec, portrait in encoding_jobs]
+        for future in futures:
+            future.result()
+
+
+def prepare_rewind(work, scene):
+    """Return closing-loop sources, or legacy reverse-route hard links."""
+    frames = scene['rewind']
+    if scene.get('rewindKind') == 'closing-loop':
+        directory = work / 'frames' / 'rewind'
+        for i in range(len(frames)):
+            if not (directory / f'{i:04d}.png').is_file():
+                raise RuntimeError(f'Closing-loop frame {i} has not been rendered')
+        return directory
+    intervals = scene['intervals']
+    if len(scene['legs']) != 3 or len(frames) != intervals + 1:
+        raise ValueError('Rewind requires three equal-duration legs and one transition duration.')
+    directory = work / 'frames' / 'rewind'
+    directory.mkdir(parents=True, exist_ok=True)
+    for i, frame in enumerate(frames):
+        source_index = 3 * i
+        segment = min(2, source_index // intervals)
+        leg = 2 - segment
+        local_index = source_index - segment * intervals
+        index = intervals - local_index
+        original_frame = scene['legs'][leg][index]
+        # Exported timing is authoritative: refuse reuse if it describes a
+        # different camera. Roundoff in the symmetric easing is harmless.
+        if frame['cell'] != original_frame['cell'] or any(
+                abs(a-b) > 1e-9 for a, b in zip(frame['camera'], original_frame['camera'])):
+            raise ValueError(f'Rewind sample {i} disagrees with source leg {leg}, frame {index}')
+        original = work / 'frames' / f'leg-{leg}' / f'{index:04d}.png'
+        if not original.is_file():
+            raise RuntimeError(f'Rewind source is missing: {original}')
+        target = directory / f'{i:04d}.png'
+        target.unlink(missing_ok=True)
+        os.link(original, target)
+    return directory
+
+
+def encode_rewind(work, output, scene, *, ffmpeg='ffmpeg', threads=4,
+                  width=1920, height=960, jobs=1):
+    directory = prepare_rewind(work, scene)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
+        futures = [pool.submit(encode, directory,
+                   output / f"rewind{'-portrait' if portrait else ''}.{codec}",
+                   scene['fps'], codec, len(scene['rewind']), ffmpeg=ffmpeg,
+                   threads=threads, portrait=portrait, width=width, height=height)
+                   for portrait in [False, True] for codec in ['mp4', 'webm']]
         for future in futures:
             future.result()
 
@@ -140,15 +193,14 @@ def write_manifest(work, output, scene, settings, ffmpeg):
     expected += [f'transition-{leg}-{direction}{suffix}.{codec}'
                  for leg in range(len(scene['legs'])) for direction in ['forward', 'reverse']
                  for suffix in ['', '-portrait'] for codec in ['mp4', 'webm']]
+    expected += [f'rewind{suffix}.{codec}' for suffix in ['', '-portrait'] for codec in ['mp4', 'webm']]
     for name in expected:
         if not (output / name).is_file():
             raise RuntimeError(f'Cannot finalize incomplete media: {name} is missing')
     manifest = {
-        'version': 1, 'width': width, 'height': height, 'aspectRatio': width / height,
+        'version': 2, 'width': width, 'height': height, 'aspectRatio': width / height,
         'portraitWidth': portrait_width(height), 'portraitHeight': height,
-        'fps': scene['fps'], 'frameCount': scene['intervals'] + 1,
-        'timelineDuration': scene['timelineDuration'],
-        'videoDuration': (scene['intervals'] + 1) / scene['fps'],
+        'fps': scene['fps'],
         'fieldScale': .82, 'beamRadius': .025, 'sceneSha256': settings['sceneSha256'],
         'geometryPrecision': scene.get('precision', 'float32'),
         'colorPrecision': 'float32', 'tubeDiscriminant': 'factored-compensated',
@@ -161,20 +213,31 @@ def write_manifest(work, output, scene, settings, ffmpeg):
                                   'pixelFormat': 'yuv420p', 'references': 4,
                                   'landscapeLevel': '4.2', 'portraitLevel': '3.2', 'endpointSeconds': 1.5,
                                   'endpointBitrateFactor': 2.5, 'maxrateFactor': 2},
-                     'webm': {'encoder': 'libaom-av1', 'passes': 2, 'cpuUsed': 4,
+                     'webm': {'encoder': 'libaom-av1', 'passes': 2, 'cpuUsed': 2,
                               'firstPassCpuUsed': 6, 'pixelFormat': 'yuv420p10le',
                               'rowMt': 1, 'tiles': '2x1', 'lagInFrames': 35},
                      'landscapeBitrate': 4_000_000, 'portraitBitrate': 1_500_000,
-                     'keyframeInterval': scene['intervals'],
+                     'keyframeInterval': round(8*scene['fps']),
                      'ffmpegVersion': subprocess.check_output(
                          [ffmpeg, '-version'], text=True).splitlines()[0]},
         'stations': [{'index': i, 'image': f'station-{i}.webp',
                       'portraitImage': f'station-{i}-portrait.webp', 'phase': frame['phase']}
                      for i, frame in enumerate(scene['stations'])],
         'transitions': [],
+        'rewind': {'from': 3, 'to': 0,
+                   'kind': scene.get('rewindKind', 'reverse-route'),
+                   'speed': 1 if scene.get('rewindKind') == 'closing-loop' else 3,
+                   'timelineDuration': (len(scene['rewind'])-1)/scene['fps'],
+                   'videoDuration': len(scene['rewind'])/scene['fps'],
+                   'frameCount': len(scene['rewind']),
+                   'mp4': 'rewind.mp4', 'webm': 'rewind.webm',
+                   'portrait': {'mp4': 'rewind-portrait.mp4', 'webm': 'rewind-portrait.webm'}},
     }
     for leg in range(len(scene['legs'])):
-        entry = {'from': leg, 'to': leg + 1}
+        entry = {'from': leg, 'to': leg + 1,
+                 'timelineDuration': (len(scene['legs'][leg])-1)/scene['fps'],
+                 'videoDuration': len(scene['legs'][leg])/scene['fps'],
+                 'frameCount': len(scene['legs'][leg])}
         for direction in ['forward', 'reverse']:
             entry[direction] = {codec: f'transition-{leg}-{direction}.{codec}'
                                 for codec in ['mp4', 'webm']}
@@ -207,14 +270,23 @@ def main():
     parser.add_argument('--skip-encode', action='store_true')
     parser.add_argument('--encode-only', action='store_true')
     parser.add_argument('--ffmpeg', default=os.environ.get('FFMPEG_BINARY', 'ffmpeg'))
-    parser.add_argument('--threads', type=int, default=4)
+    parser.add_argument('--threads', type=int, default=2)
+    parser.add_argument('--encode-jobs', type=int, default=1,
+                        help='Concurrent encoders; use 2 only with sufficient RAM after rendering.')
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     scene = json.loads((args.work / 'scene.json').read_text())
     started = time.perf_counter()
+    def progress(stage, **values):
+        record = dict(stage=stage, elapsedSeconds=round(time.perf_counter()-started, 2),
+                      updatedUnix=time.time(), pid=os.getpid(), **values)
+        path=args.work / 'progress.json'
+        temporary=path.with_suffix('.partial.json')
+        temporary.write_text(json.dumps(record, indent=2)+'\n')
+        temporary.replace(path)
     if any(v <= 0 or v % 2 for v in [args.width, args.height, args.still_width, args.still_height]):
         parser.error('Image dimensions must be positive even integers.')
-    if args.supersample < 1 or args.threads < 1 or args.steps < 1 or args.still_steps < 1:
+    if args.supersample < 1 or args.threads < 1 or args.encode_jobs < 1 or args.steps < 1 or args.still_steps < 1:
         parser.error('Supersampling, threads and traversal limits must be at least 1.')
     if args.width * args.still_height != args.height * args.still_width:
         parser.error('Stills and videos must use the same aspect ratio.')
@@ -234,7 +306,7 @@ def main():
         parser.error('--encode-only requires the provenance record from a completed render.')
     if args.force:
         # Invalidate the entire old generation first, so interruption cannot mix scenes.
-        for path in (args.work / 'frames').glob('leg-*/*.png'):
+        for path in (args.work / 'frames').glob('*/*.png'):
             path.unlink()
     settings_path.write_text(json.dumps(settings, indent=2) + '\n')
     if not args.encode_only:
@@ -269,6 +341,8 @@ def main():
                 save_image(image, args.output / f'station-{i}.webp')
                 save_image(crop_portrait(image), args.output / f'station-{i}-portrait.webp')
                 print(f'Still {i} complete', flush=True)
+                progress('posters', completed=i+1, total=len(scene['stations']))
+            still.close()
             record = {'settings': settings, 'files': {
                 name: hashlib.sha256((args.output / name).read_bytes()).hexdigest()
                 for name in poster_names}}
@@ -285,11 +359,29 @@ def main():
                     save_image(render_image(renderer, frame, (args.width, args.height)), path)
                 if i % 20 == 0 or i == len(frames) - 1:
                     print(f'Leg {leg}: {i+1}/{len(frames)}, elapsed {time.perf_counter()-started:.0f}s', flush=True)
+                    progress('render', leg=leg, completed=i+1, total=len(frames))
         if not args.skip_encode:
+            progress('encode', leg=leg)
             encode_leg(args.work, args.output, scene, leg, ffmpeg=args.ffmpeg,
-                       threads=args.threads, width=args.width, height=args.height)
+                       threads=args.threads, width=args.width, height=args.height, jobs=args.encode_jobs)
+    if not args.encode_only and scene.get('rewindKind') == 'closing-loop':
+        directory = args.work / 'frames' / 'rewind'
+        directory.mkdir(parents=True, exist_ok=True)
+        for i, frame in enumerate(scene['rewind']):
+            path = directory / f'{i:04d}.png'
+            if not path.exists():
+                save_image(render_image(renderer, frame, (args.width, args.height)), path)
+            if i % 20 == 0 or i == len(scene['rewind']) - 1:
+                print(f'Closing loop: {i+1}/{len(scene["rewind"])}, elapsed {time.perf_counter()-started:.0f}s', flush=True)
+                progress('render', leg='rewind', completed=i+1, total=len(scene['rewind']))
+    if not args.encode_only:
+        renderer.close()
     if not args.skip_encode:
+        progress('encode', leg='rewind')
+        encode_rewind(args.work, args.output, scene, ffmpeg=args.ffmpeg,
+                      threads=args.threads, width=args.width, height=args.height, jobs=args.encode_jobs)
         write_manifest(args.work, args.output, scene, settings, args.ffmpeg)
+    progress('rendered' if args.skip_encode else 'complete')
     print(f'Complete: {time.perf_counter()-started:.0f}s', flush=True)
 
 

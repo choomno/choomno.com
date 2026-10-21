@@ -1,7 +1,22 @@
 import {dot} from './intrinsic.js';
 import {masterAspect} from './media-settings.js';
-import {readingPhase,readingPose,textPlaneDepth} from './camera-path.js';
-export {readingPhase,readingPose} from './camera-path.js';
+import {readingPhase,readingPose,readingFrames,routeLengths,routeJoinPhases,textPlaneDepth} from './camera-path.js?v=final-flight-11';
+export {readingPhase,readingPose} from './camera-path.js?v=final-flight-11';
+
+// The gallery uses a parallel-transported lateral boost at its text mounts.
+// Express it at the canonical station so its deck-equivalent destination has
+// exactly the same text transform as the rendered camera.
+export function projectionPose(phase){
+ const start=readingPhase(1),end=readingPhase(2);
+ let station,distance;
+ if(phase>start&&phase<=routeJoinPhases[2]){
+  station=readingFrames[1];distance=(phase/start-1)*routeLengths[1];
+ }else if(phase>=routeJoinPhases[3]&&phase<end){
+  station=readingFrames[2];distance=(phase/start-2)*routeLengths[1];
+ }else return readingPose(phase);
+ const c=Math.cosh(distance),s=Math.sinh(distance);
+ return station.map(row=>[c*row[0]+s*row[1],s*row[0]+c*row[1],row[2],row[3]]);
+}
 
 export const fieldScale = .82;
 // object-fit:cover crops the vertical field on viewports wider than a master.
@@ -22,7 +37,7 @@ export function nearPlaneOpacity(minimumDepth) {
 // Interpolating projectively gives a totally geodesic plane in H^3.
 export function projectReadingPlaneWithDepth(phase, stationPhase, width, height, viewportWidth, viewportHeight) {
  if (!(width > 0 && height > 0 && viewportWidth > 0 && viewportHeight > 0)) return null;
- const camera = readingPose(phase), station = readingPose(stationPhase);
+ const camera = projectionPose(phase), station = readingPose(stationPhase);
  const scale = viewportFieldScale(viewportWidth,viewportHeight);
  const z = textPlaneDepth, half = z * scale * width / viewportHeight, vertical = half * height / width;
  const time = Math.sqrt(1 + half * half + vertical * vertical + z * z);

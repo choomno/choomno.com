@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
-import {transitionProgress,textSlideDuration,travelDuration,transitionDuration} from '../transition-timing.js';
+import {transitionProgress,textSlideDuration,transitionDurationForLeg} from '../transition-timing.js';
 import {readingPhase,routeJoinPhases} from '../camera-path.js';
 import {projectReadingPlaneWithDepth} from '../projection.js';
 import {videoFramesPerSecond as fps} from '../media-settings.js';
 const close=(a,b,tolerance=1e-10)=>assert.ok(Math.abs(a-b)<tolerance,`${a} != ${b}`);
 const pixel=(m,x,y)=>[(m[0]*x+m[4]*y+m[12])/(m[3]*x+m[7]*y+1),(m[1]*x+m[5]*y+m[13])/(m[3]*x+m[7]*y+1)];
 for(let leg=0;leg<3;leg++){
+ const transitionDuration=transitionDurationForLeg(leg);
+ const travelDuration=transitionDuration-2*textSlideDuration;
  const side=routeJoinPhases[2*leg]/readingPhase(1)-leg;
  close(transitionProgress(0,leg),0);close(transitionProgress(transitionDuration,leg),1);
  close(transitionProgress(textSlideDuration,leg),side);
@@ -20,7 +22,16 @@ for(let leg=0;leg<3;leg++){
   assert.ok(Math.abs(right-left)<1e-8,'Only the reading stops ease to rest');
   assert.ok(Math.abs(right-2*center+left)<1e-8,'Acceleration tends to zero at reading stops');
  }
- for(const time of [textSlideDuration,textSlideDuration+travelDuration]){
+ if(leg===1){
+  // The saved gallery uses a quintic lateral displacement, unlike the outer
+  // legs' nonzero-speed handoff. Its middle phase is only a hidden text clock.
+  for(const u of [0,.1,.25,.5,.75,.9,1]){
+   const eased=u*u*u*(10+u*(-15+6*u));
+   close(transitionProgress(u*textSlideDuration,leg),side*eased);
+   close(transitionProgress(transitionDuration-u*textSlideDuration,leg),1-side*eased);
+  }
+ }
+ for(const time of leg===1?[]:[textSlideDuration,textSlideDuration+travelDuration]){
   const center=transitionProgress(time,leg),left=transitionProgress(time-1,leg),right=transitionProgress(time+1,leg);
   const speed=1.25*side/textSlideDuration;
   close(center-left,speed,1e-10);close(right-center,speed,1e-10);
@@ -35,6 +46,7 @@ for(let leg=0;leg<3;leg++){
 let minimumVisible=Infinity,maximumStep=0;
 for(const [vw,vh,width,height] of [[1440,900,620,330],[625,780,360,360],[390,844,343.2,400],[320,568,281.6,390]]){
  for(let leg=0;leg<3;leg++)for(const direction of [1,-1]){
+  const transitionDuration=transitionDurationForLeg(leg),travelDuration=transitionDuration-2*textSlideDuration;
   const station=direction===1?leg+1:leg;
   let first=null,last=null;
   for(let t=textSlideDuration+travelDuration;t<=transitionDuration+1;t+=1000/fps){
@@ -55,4 +67,4 @@ for(const [vw,vh,width,height] of [[1440,900,620,330],[625,780,360,360],[390,844
   assert.ok(transitionDuration-first>600,'The visible approach takes at least 0.6 seconds');
  }
 }
-console.log(`Text transition checks passed: smooth reversible timeline, fully opaque edge entry, at least ${minimumVisible.toFixed(0)}ms visible approach, at most ${maximumStep.toFixed(1)}px per frame at ${fps}fps.`);
+console.log(`Text transition checks passed: reversible per-leg reading timelines, fully opaque edge entry, at least ${minimumVisible.toFixed(0)}ms visible approach, at most ${maximumStep.toFixed(1)}px per frame at ${fps}fps.`);

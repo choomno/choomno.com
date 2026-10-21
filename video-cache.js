@@ -1,4 +1,5 @@
-// Keep only one responsive codec family in memory. Each short clip is fully
+// Keep only one responsive codec family in memory (six legs plus reset).
+// Each short clip is fully
 // downloaded before its object URL reaches the video decoder.
 export function createVideoCache(){
  let entries=new Map(),queue=[],active=null,hidden=false,eager=false,destroyed=false;
@@ -15,6 +16,9 @@ export function createVideoCache(){
   const key=urls.join('|');
   if([...entries.keys()].join('|')!==key){reset();for(const url of urls)entries.set(url,{url,state:'idle',waiters:new Set(),objectURL:null});}
   eager=preload;
+  if(!eager&&active&&!active.entry.waiters.size){
+   const interrupted=active.entry;active.controller.abort();active=null;interrupted.state='idle';
+  }
   if(eager)for(const entry of entries.values())if(entry.state==='idle'&&!queue.includes(entry))queue.push(entry);
   pump();
  }

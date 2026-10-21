@@ -7,7 +7,7 @@ import {videoFramesPerSecond} from '../media-settings.js';
 
 const scenario=process.argv[2];
 if(!scenario){
- for(const name of ['media-clock','autoplay-rejection','media-failure','paused','reduced-motion','rounded-scroll','short-viewport','rewind-cancel']){
+ for(const name of ['media-clock','autoplay-rejection','media-failure','paused','saved-static','reduced-motion','rounded-scroll','short-viewport','rewind-cancel']){
   const result=spawnSync(process.execPath,['--experimental-default-type=module',fileURLToPath(import.meta.url),name],{encoding:'utf8'});
   assert.equal(result.status,0,`${name}: ${result.stdout}${result.stderr}`);
  }
@@ -51,6 +51,8 @@ if(!scenario){
  const win=new Target(),doc=new Target(),media=new Target();media.matches=scenario==='reduced-motion';
  globalThis.window=win;globalThis.document=doc;globalThis.innerHeight=scenario==='short-viewport'?390:800;globalThis.innerWidth=1280;globalThis.scrollY=0;
  Object.defineProperty(globalThis,'navigator',{value:{connection:{saveData:false}},configurable:true});
+ const preferences=new Map(scenario==='saved-static'?[['choomno-static-view','true']]:[]);
+ globalThis.localStorage={getItem:key=>preferences.get(key)??null,setItem:(key,value)=>preferences.set(key,value)};
  const downloaded=[];
  globalThis.fetch=async url=>({ok:true,blob:async()=>{downloaded.push(url);return Object.assign(new Blob(['encoded video']),{source:url});}});
  URL.createObjectURL=blob=>'blob:'+blob.source;
@@ -80,8 +82,8 @@ if(!scenario){
   const heading=new Target('h2');heading.section=section;
   return [[section.attributes['aria-labelledby'],heading],...(section.id?[[section.id,section]]:[])];
  }));
- const video=new Video(),still=new Target('img'),play=new Target('button'),year=new Target('span');
- const nodes={'#background-video':video,'#background-still':still,'#play':play,'#copyright-year':year};
+ const video=new Video(),still=new Target('img'),play=new Target('button'),year=new Target('span'),main=new Target('main');main.inert=false;
+ const nodes={'#background-video':video,'#background-still':still,'#view-mode':play,'#copyright-year':year,main};
  doc.querySelector=selector=>nodes[selector];doc.querySelectorAll=selector=>selector==='main > section'?sections:copies;doc.getElementById=id=>ids[id];
  const errors=[];console.error=(...args)=>errors.push(args.join(' '));
  function advance(ms){
@@ -122,9 +124,9 @@ if(!scenario){
   assert.equal(still.src,'./media/station-0.webp');
   if(scenario==='media-clock'){
    const initial=copies[0].style.transform;emit(next,'click');await flush();
-   assert.match(video.src,/transition-0-forward\.mp4\?v=av1-4m-1$/);assert.equal(video.hidden,true,'a station poster remains until the first presented frame');
+   assert.match(video.src,/transition-0-forward\.mp4\?v=final-flight-13$/);assert.equal(video.hidden,true,'a station poster remains until the first presented frame');
    assert.ok(video.src.startsWith('blob:'),'the application plays a complete downloaded file');
-   assert.ok(downloaded.includes('./media/transition-0-forward.mp4?v=av1-4m-1'));
+   assert.ok(downloaded.includes('./media/transition-0-forward.mp4?v=final-flight-13'));
    advance(1000);assert.equal(copies[0].style.transform,initial,'elapsed wall time cannot move text before decoded frames');
    video.present(.4);assert.equal(video.hidden,false);
    assert.equal(copies[0].style.transform,initial,'a new video target does not jump the text in the same callback');
@@ -136,15 +138,22 @@ if(!scenario){
    advance(2000);assert.equal(copies[0].style.transform,expectedTransform(0,transitionProgress(1000*(.4+1/videoFramesPerSecond),0)),'a stalled video permits at most one frame of text interpolation');
    const frameTransform=copies[0].style.transform;advance(1000);assert.equal(copies[0].style.transform,frameTransform,'bounded interpolation stops without another presented frame');
    video.present(7.95);endLeg();visible(1);assert.equal(still.src,'./media/station-1.webp');assert.equal(video.hidden,true);
-   emit(previous,'click');await flush();assert.match(video.src,/transition-0-reverse\.mp4\?v=av1-4m-1$/);
+   emit(previous,'click');await flush();assert.match(video.src,/transition-0-reverse\.mp4\?v=final-flight-13$/);
    const reverseStart=copies[1].style.transform;video.present(.4);assert.equal(copies[1].style.transform,reverseStart);
    advance(2000);assert.equal(copies[1].style.transform,expectedTransform(1,1-transitionProgress(1000*(.4+1/videoFramesPerSecond),0)),'reverse text settles onto the bounded reverse media target');
    endLeg();visible(0);
    for(let leg=0;leg<3;leg++){
     emit(win,'keydown',{key:'ArrowRight'});await flush();
-    assert.match(video.src,new RegExp(`transition-${leg}-forward\\.mp4\\?v=av1-4m-1$`));
+    assert.match(video.src,new RegExp(`transition-${leg}-forward\\.mp4\\?v=final-flight-13$`));
     assert.equal(next.disabled,true,'arrow navigation locks controls during each transition');
-    video.present(.4);endLeg();await flush();visible(leg+1);
+    video.present(.4);
+    if(leg===1){
+     video.present(6);advance(2000);
+     assert.ok(copies.every(copy=>copy.style.visibility==='hidden'),'gallery flight cannot reveal text projected along the previous camera route');
+     video.present(10.8);advance(2000);
+     assert.equal(copies[2].style.transform,expectedTransform(2,1+transitionProgress(1000*(10.8+1/videoFramesPerSecond),1)),'twelve-second gallery uses its native late arrival mount');
+    }
+    endLeg();await flush();visible(leg+1);
     assert.equal(next.disabled,leg===2,'each exact station releases navigation unless it is the final section');
    }
    assert.equal(previous.disabled,false,'the final exact station releases the transition lock');
@@ -154,7 +163,7 @@ if(!scenario){
    assert.equal(next.disabled,false,'autoplay denial cannot strand navigation in a busy state');
    emit(next,'click');await flush();visible(2);
   }else if(scenario==='media-failure'){
-   emit(next,'click');await flush();video.onerror();await flush();assert.match(video.src,/transition-0-forward\.mp4\?v=av1-4m-1$/,'an AV1 decode error tries the supported H.264 format');
+   emit(next,'click');await flush();video.onerror();await flush();assert.match(video.src,/transition-0-forward\.mp4\?v=final-flight-13$/,'an AV1 decode error tries the supported H.264 format');
    video.onerror();visible(1);assert.equal(video.hidden,true);assert.equal(next.disabled,false);
    assert.equal(still.src,'./media/station-1.webp','both codec failures retain the requested text and station still');
    emit(next,'click');await flush();video.present(4);advance(300);
@@ -163,13 +172,23 @@ if(!scenario){
    assert.equal(still.src,'./media/station-1.webp','a codec retry restores both the source poster and its readable text while loading');
    video.present(4);advance(12016);visible(2);
    assert.equal(still.src,'./media/station-2.webp','a prolonged network/decoder stall also completes with a still');
-  }else if(scenario==='paused'||scenario==='reduced-motion'){
-   if(scenario==='reduced-motion')assert.deepEqual(downloaded,[],'reduced motion does not eagerly fetch background clips');
+  }else if(scenario==='paused'||scenario==='saved-static'||scenario==='reduced-motion'){
+   if(scenario==='reduced-motion'||scenario==='saved-static')assert.deepEqual(downloaded,[],'a static initial preference does not eagerly fetch background clips');
    if(scenario==='paused')emit(play,'click');
-   assert.equal(play.textContent,'Resume background');
-   const frozenPoster=still.src;emit(next,'click');visible(1);
-   assert.equal(video.playCalls,0);assert.equal(still.src,frozenPoster,'paused or reduced-motion navigation retains its stationary background');
-   if(scenario==='paused')emit(play,'click');else{media.matches=false;emit(media,'change');}
+   assert.equal(play.textContent,'Animated view');assert.equal(play.getAttribute('aria-pressed'),'true');
+   assert.equal(play.disabled,scenario==='reduced-motion');
+   if(scenario!=='reduced-motion')assert.equal(preferences.get('choomno-static-view'),'true');
+   emit(next,'click');visible(1);
+   assert.equal(video.playCalls,0);assert.equal(still.src,'./media/station-1.webp','static navigation shows the selected section background');
+   if(scenario==='saved-static'){
+    emit(next,'click');visible(2);emit(next,'click');visible(3);
+    const reset=new Target('a');reset.href='http://localhost/#name';reset.attributes.href='#name';reset.attributes['data-rewind']='';
+    emit(doc,'click',{target:reset,button:0});advance(16);visible(0);
+    assert.equal(video.playCalls,0);assert.equal(main.inert,false);assert.equal(doc.documentElement.classList.contains('reset-flight'),false,'static return never starts or hides text for a movie');
+    emit(next,'click');visible(1);
+   }
+   if(scenario!=='reduced-motion')emit(play,'click');else{media.matches=false;emit(media,'change');}
+   assert.equal(play.textContent,'Static view');assert.equal(play.getAttribute('aria-pressed'),'false');
    assert.equal(still.src,'./media/station-1.webp','resuming aligns the background with the currently selected text');
    emit(next,'click');await flush();video.present(4);emit(play,'click');visible(2);
    const frozenFrame=copies[2].style.transform,playCount=video.playCalls;
@@ -199,8 +218,25 @@ if(!scenario){
    const settled=copies[1].style.transform;
    lateFrame(now,{mediaTime:2});lateEnded();assert.equal(copies[1].style.transform,settled,'callbacks canceled by resize cannot revive an earlier transition');
    const rewind=new Target('a');rewind.href='http://localhost/#name';rewind.attributes.href='#name';rewind.attributes['data-rewind']='';
-   const before=video.playCalls;emit(doc,'click',{target:rewind,button:0});advance(16);
-   visible(0);assert.equal(video.playCalls,before);assert.equal(still.src,'./media/station-0.webp');assert.equal(doc.activeElement,ids.name);
+   for(let destination=2;destination<=3;destination++){emit(next,'click');await flush();video.present(7.9);endLeg();visible(destination);}
+   const before=video.playCalls;emit(doc,'click',{target:rewind,button:0});await flush();
+   assert.equal(video.playCalls,before+1);assert.match(video.src,/rewind\.mp4\?v=final-flight-13$/);
+   assert.equal(doc.documentElement.classList.contains('reset-flight'),true);assert.equal(main.inert,true,'return flight hides and disables every slide plane');
+   for(const seconds of [.4,4,8,12,18,21.9,22.3]){
+    video.present(seconds);advance(32);
+    assert.equal(doc.documentElement.classList.contains('reset-flight'),true,'intermediate logical section coordinates never reveal earlier slide text');
+    assert.equal(main.inert,true);assert.equal(next.disabled,true,'return flight holds the navigation lock');
+   }
+   endLeg();advance(16);visible(0);assert.equal(still.src,'./media/station-0.webp');assert.equal(doc.activeElement,ids.name);
+   assert.equal(doc.documentElement.classList.contains('reset-flight'),false);assert.equal(main.inert,false,'arrival reveals only the exact opening text');
+   for(let destination=1;destination<=3;destination++){emit(next,'click');await flush();video.present(7.9);endLeg();visible(destination);}
+   emit(doc,'click',{target:rewind,button:0});await flush();video.present(.8);
+   const canceledReturn=[...video.frames.values()][0],canceledReturnEnd=video.onended;
+   emit(win,'resize');advance(32);visible(0);assert.equal(doc.documentElement.classList.contains('reset-flight'),false);assert.equal(main.inert,false,'canceling a return flight cannot strand hidden text');
+   canceledReturn(now,{mediaTime:5});canceledReturnEnd();assert.equal(doc.documentElement.classList.contains('reset-flight'),false);visible(0);
+   for(let destination=1;destination<=3;destination++){emit(next,'click');await flush();video.present(7.9);endLeg();visible(destination);}
+   emit(doc,'click',{target:rewind,button:0});await flush();assert.equal(main.inert,true);video.onerror();advance(16);
+   visible(0);assert.equal(doc.documentElement.classList.contains('reset-flight'),false);assert.equal(main.inert,false,'a failed return movie reveals its opening poster and text');
    emit(next,'click');await flush();video.present(.4);
    const currentSource=video.src;location.hash='#elsewhere';emit(win,'hashchange');
    assert.equal(video.src,currentSource);assert.equal(video.paused,false,'URL hashes no longer interrupt local slide navigation');

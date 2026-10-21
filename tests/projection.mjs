@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {projectReadingPlane, projectReadingPlaneWithDepth, nearPlaneOpacity, readingPhase, readingPose} from '../projection.js';
+import {projectReadingPlane, projectReadingPlaneWithDepth, nearPlaneOpacity, readingPhase, projectionPose as readingPose} from '../projection.js';
 import {textPlaneDepth} from '../camera-path.js';
 import {dot, apply} from '../rhombic.js';
 const project = (m,x,y) => [(m[0]*x+m[4]*y+m[12])/(m[3]*x+m[7]*y+1),(m[1]*x+m[5]*y+m[13])/(m[3]*x+m[7]*y+1)];
@@ -95,3 +95,17 @@ for(const [boundary,direction,level] of [[.25,1,0],[.875,-1,1]]){
  assert.ok(Math.abs(second-2*first+level)/(epsilon*epsilon)<.01,'opacity acceleration vanishes at the fade boundary');
 }
 console.log('All four text planes match their centered reading rectangles across desktop/mobile sizes; right-to-left travel, ray incidence and continuous near-plane fading verified.');
+
+// Camera-relative text transforms must match the actual gallery mount frames,
+// including its deck-transformed arrival, throughout both 1.6-second intervals.
+{
+ const {flightPose}=await import('../flight-path.js');
+ const {transitionProgress}=await import('../transition-timing.js');
+ const relative=(a,b)=>[0,1,2,3].map(i=>[0,1,2,3].map(j=>(i===0?-1:1)*dot(a.map(r=>r[i]),b.map(r=>r[j]))));
+ for(const sec of [0,.2,.8,1.2,1.59,10.41,10.8,11.2,11.8,12]){
+  const endpoint=sec>6?1:0;
+  const actual=relative(flightPose(1,endpoint),flightPose(1,sec/12));
+  const projected=relative(readingPose(readingPhase(1+endpoint)),readingPose(readingPhase(1+transitionProgress(sec*1000,1))));
+  actual.flat().forEach((value,i)=>close(value,projected.flat()[i],3e-9));
+ }
+}

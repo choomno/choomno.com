@@ -1,6 +1,6 @@
 // A gesture selects one reading pose; its momentum cannot select a second pose.
-import {transitionDuration,transitionProgress} from './transition-timing.js';
-export {transitionDuration} from './transition-timing.js';
+import {transitionDuration,transitionDurationForLeg,transitionProgress} from './transition-timing.js?v=final-flight-11';
+export {transitionDuration} from './transition-timing.js?v=final-flight-11';
 const interactive='a,button,input,select,textarea,summary,details,[contenteditable="true"]';
 const editable='input,select,textarea,[contenteditable="true"]';
 const clamp=(value,low,high)=>Math.max(low,Math.min(high,value));
@@ -56,7 +56,7 @@ export function initSectionNavigation({isEnabled=()=>true,onChange=()=>{},onProg
   ++transitionId;cancelAnimationFrame(animation);animation=0;moving=false;
   const cancel=cancelTransition;cancelTransition=null;cancel?.();
  }
- function goTo(index,{immediate=false,interrupt=false,focusTarget=null}={}){
+ function goTo(index,{immediate=false,interrupt=false,focusTarget=null,reset=false}={}){
   if(destroyed||!isEnabled()||(moving&&!interrupt))return false;
   const startIndex=active;
   stop();active=clamp(index,0,sections.length-1);
@@ -69,8 +69,11 @@ export function initSectionNavigation({isEnabled=()=>true,onChange=()=>{},onProg
   // every media/text refresh forces layout after the previous transform writes.
   const positions=sections.map((_,i)=>position(i));
   const anchors=positions.filter(y=>direction*(y-start)>.75&&direction*(end-y)>.75).sort((a,b)=>direction*(a-b));
-  const stops=[start,...anchors,end],duration=legDuration*(stops.length-1);
+  const stops=[start,...anchors,end];
   const indices=stops.map((y,i)=>i===0?startIndex:positions.reduce((best,p,j)=>Math.abs(p-y)<Math.abs(positions[best]-y)?j:best,active));
+  const durations=indices.slice(1).map((index,i)=>legDuration?transitionDurationForLeg(Math.min(indices[i],index)):0);
+  const ends=durations.reduce((out,value)=>[...out,(out.at(-1)??0)+value],[]);
+  const duration=ends.at(-1)??0;
   const report=value=>{progress=value;onProgress(value);};
   // Let text projection make the destination plane interactive before focusing.
   const focusDestination=()=>{if(focusTarget)requestAnimationFrame(()=>{if(!destroyed&&!moving&&active===index)focusTarget.focus({preventScroll:true});});};
@@ -80,7 +83,7 @@ export function initSectionNavigation({isEnabled=()=>true,onChange=()=>{},onProg
   if(animateTransition){
    const id=transitionId;
    const current=()=>!destroyed&&moving&&id===transitionId;
-   const cancel=animateTransition({from:startIndex,to:active,onProgress(value){
+   const cancel=animateTransition({from:startIndex,to:active,reset:reset&&startIndex===sections.length-1&&active===0,onProgress(value){
     if(!current()||!Number.isFinite(value))return;
     if(!isEnabled()){stop();updateControls();return;}
     const p=clamp(value,Math.min(startIndex,active),Math.max(startIndex,active));
@@ -102,9 +105,9 @@ export function initSectionNavigation({isEnabled=()=>true,onChange=()=>{},onProg
   const began=performance.now();
   function step(now){
    if(destroyed||!isEnabled()){stop();updateControls();return;}
-   const elapsed=Math.min(duration,now-began),leg=Math.min(stops.length-2,Math.floor(elapsed/legDuration));
+   const elapsed=Math.min(duration,now-began),leg=Math.min(stops.length-2,Math.max(0,ends.findIndex(end=>elapsed<=end)));
    const routeLeg=Math.min(indices[leg],indices[leg+1]);
-   const fraction=transitionProgress(elapsed-leg*legDuration,routeLeg);
+   const fraction=transitionProgress(elapsed-(ends[leg-1]??0),routeLeg);
    window.scrollTo(0,stops[leg]+(stops[leg+1]-stops[leg])*fraction);
    // Native scroll coordinates are rounded. Preserve the unrounded logical
    // position for the camera and text, whose nearby parallax is much larger.
@@ -166,7 +169,7 @@ export function initSectionNavigation({isEnabled=()=>true,onChange=()=>{},onProg
    const url=new URL(link.href,location.href);
    if(url.origin===location.origin&&url.pathname===location.pathname&&url.search===location.search&&(url.hash||link.getAttribute('href')==='#')){
     const index=sectionForHash(url.hash);
-    if(index>=0){event.preventDefault();if(!moving){goTo(index,{immediate:link.getAttribute('data-rewind')!==null,focusTarget:url.hash==='#name'?document.getElementById('name'):null});}}
+    if(index>=0){event.preventDefault();if(!moving){goTo(index,{reset:link.getAttribute('data-rewind')!==null,focusTarget:url.hash==='#name'?document.getElementById('name'):null});}}
    }
    return;
   }
